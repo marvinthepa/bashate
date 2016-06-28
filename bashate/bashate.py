@@ -14,10 +14,13 @@
 
 from __future__ import absolute_import
 
+from abc import ABCMeta
+from abc import abstractmethod
 import argparse
 import fileinput
 import os
 import re
+from six import add_metaclass
 import subprocess
 import sys
 
@@ -204,8 +207,8 @@ def check_syntax(filename, report):
                     filelineno=int(m.group('lineno')))
 
 
-class BashateReport(object):
-
+@add_metaclass(ABCMeta)
+class Report(object):
     def __init__(self):
         self.error_count = 0
         self.error_list = None
@@ -254,13 +257,30 @@ class BashateReport(object):
 
         self.log_error(error, line, filename, filelineno, warn)
 
-    @staticmethod
-    def log_error(error, line, filename, filelineno, warn=False):
+    @abstractmethod
+    def log_error(self, error, line, filename, filelineno, warn):
+        pass
+
+
+class BashateReport(Report):
+
+    def log_error(self, error, line, filename, filelineno, warn=False):
         print("[%(warn)s] %(error)s: '%(line)s'" %
               {'warn': "W" if warn else "E",
                'error': error,
                'line': line.rstrip('\n')})
         print(" - %s : L%s" % (filename, filelineno))
+
+
+class PyCodeStyleReport(Report):
+
+    def log_error(self, error, line, filename, filelineno, warn=False):
+        print("%(filename)s:%(filelineno)s:1: %(error)s" %
+              {'filename': filename,
+               'filelineno': filelineno,
+               'warn': "W" if warn else "E",
+               'error': error.replace(":", "", 1),
+               'line': line.rstrip('\n')})
 
 
 class BashateRun(object):
@@ -387,6 +407,8 @@ def main():
                         help='Rules to always error (rather than warn)')
     parser.add_argument('-v', '--verbose', action='store_true', default=False)
     parser.add_argument('-s', '--show', action='store_true', default=False)
+    parser.add_argument('-f', '--format', default='bashate',
+                        choices=['bashate', 'pycodestyle', 'pep8'])
     opts = parser.parse_args()
 
     if opts.show:
@@ -398,7 +420,10 @@ def main():
         parser.print_usage()
         return 1
 
-    report = BashateReport()
+    if opts.format == 'pep8' or opts.format == 'pycodestyle':
+        report = PyCodeStyleReport()
+    else:
+        report = BashateReport()
     run = BashateRun(report)
     report.register_ignores(opts.ignore)
     report.register_warnings(opts.warn)
