@@ -204,7 +204,7 @@ def check_syntax(filename, report):
                     filelineno=int(m.group('lineno')))
 
 
-class BashateRun(object):
+class BashateReport(object):
 
     def __init__(self):
         self.error_count = 0
@@ -248,26 +248,29 @@ class BashateRun(object):
         if not filelineno:
             filelineno = fileinput.filelineno()
         if warn:
-            self.warning_count = self.warning_count + 1
+            self.warning_count += 1
         else:
-            self.error_count = self.error_count + 1
+            self.error_count += 1
 
         self.log_error(error, line, filename, filelineno, warn)
 
-    def log_error(self, error, line, filename, filelineno, warn=False):
+    @staticmethod
+    def log_error(error, line, filename, filelineno, warn=False):
         print("[%(warn)s] %(error)s: '%(line)s'" %
               {'warn': "W" if warn else "E",
                'error': error,
                'line': line.rstrip('\n')})
         print(" - %s : L%s" % (filename, filelineno))
 
+
+class BashateRun(object):
+
+    def __init__(self, report):
+        self.report = report
+
     def check_files(self, files, verbose):
         logical_line = ""
         token = False
-
-        # NOTE(mrodden): magic; replace with proper
-        # report class when necessary
-        report = self
 
         for fname in files:
 
@@ -277,12 +280,12 @@ class BashateRun(object):
 
             # simple syntax checking, as files can pass style but still cause
             # syntax errors when you try to run them.
-            check_syntax(fname, report)
+            check_syntax(fname, self.report)
 
             for line in fileinput.input(fname):
                 if fileinput.isfirstline():
 
-                    check_hashbang(line, fileinput.filename(), report)
+                    check_hashbang(line, fileinput.filename(), self.report)
 
                     if verbose:
                         print("Running bashate on %s" % fileinput.filename())
@@ -348,27 +351,27 @@ class BashateRun(object):
                 else:
                     logical_line = [line]
 
-                check_indents(logical_line, report)
+                check_indents(logical_line, self.report)
 
                 # at this point, logical_line is an array that holds
                 # the whole continuation.  XXX : historically, we've
                 # just handled every line in a continuation
                 # separatley.  Stick with what works...
                 for line in logical_line:
-                    check_no_trailing_whitespace(line, report)
-                    check_no_long_lines(line, report)
-                    check_for_do(line, report)
-                    check_if_then(line, report)
-                    check_function_decl(line, report)
-                    check_arithmetic(line, report)
-                    check_local_subshell(line, report)
-                    check_bare_arithmetic(line, report)
+                    check_no_trailing_whitespace(line, self.report)
+                    check_no_long_lines(line, self.report)
+                    check_for_do(line, self.report)
+                    check_if_then(line, self.report)
+                    check_function_decl(line, self.report)
+                    check_arithmetic(line, self.report)
+                    check_local_subshell(line, self.report)
+                    check_bare_arithmetic(line, self.report)
 
         # finished processing the file
 
         # last line should always end with a newline
         if not line.endswith('\n'):
-            report.print_error(MESSAGES['E004'].msg, line)
+            self.report.print_error(MESSAGES['E004'].msg, line)
 
 
 def main():
@@ -395,10 +398,11 @@ def main():
         parser.print_usage()
         return 1
 
-    run = BashateRun()
-    run.register_ignores(opts.ignore)
-    run.register_warnings(opts.warn)
-    run.register_errors(opts.error)
+    report = BashateReport()
+    run = BashateRun(report)
+    report.register_ignores(opts.ignore)
+    report.register_warnings(opts.warn)
+    report.register_errors(opts.error)
 
     try:
         run.check_files(files, opts.verbose)
@@ -406,11 +410,11 @@ def main():
         print("bashate: %s" % e)
         return 1
 
-    if run.warning_count > 0:
-        print("%d bashate warning(s) found" % run.warning_count)
+    if report.warning_count > 0:
+        print("%d bashate warning(s) found" % report.warning_count)
 
-    if run.error_count > 0:
-        print("%d bashate error(s) found" % run.error_count)
+    if report.error_count > 0:
+        print("%d bashate error(s) found" % report.error_count)
         return 1
 
     return 0
